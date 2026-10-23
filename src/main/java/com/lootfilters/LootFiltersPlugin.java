@@ -102,11 +102,11 @@ public class LootFiltersPlugin extends Plugin {
 	@Inject private DisplayConfigIndex displayIndex;
 	@Inject private IconIndex iconIndex;
 
-	@Inject private MenuIconService menuIconService;
+	@Inject private ResolvedDisplayService resolvedDisplayService;
 
 	@Subscribe
 	public void onPluginMessage(net.runelite.client.events.PluginMessage message) {
-		menuIconService.onPluginMessage(message);
+		resolvedDisplayService.onPluginMessage(message);
 	}
 
 	private final MenuEntryComposer menuEntryComposer = new MenuEntryComposer(this);
