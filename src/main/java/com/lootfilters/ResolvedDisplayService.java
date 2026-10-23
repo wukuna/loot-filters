@@ -9,25 +9,37 @@ import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
 import net.runelite.api.Tile;
-import net.runelite.client.eventbus.EventBus;
+import net.runelite.api.WorldView;
 import net.runelite.client.events.PluginMessage;
 
 /** On-demand snapshots of evaluated state. Never evaluates rules, loads images or plays sounds. */
 class ResolvedDisplayService {
     @Inject private LootFiltersPlugin plugin;
-    @Inject private EventBus eventBus;
 
     void onPluginMessage(PluginMessage message) {
         if (!"loot-filters".equals(message.getNamespace())
                 || !"resolved-display-request-v1".equals(message.getName())
                 || !plugin.getClient().isClientThread()) return;
         Map<String, Object> data = message.getData();
-        if (!(data.get("requestId") instanceof String)
-                || !(data.get("tile") instanceof Tile)
-                || !(data.get("itemId") instanceof Integer)) return;
-        Map<String, Object> reply = new HashMap<>(resolve((Tile) data.get("tile"), (Integer) data.get("itemId")));
-        reply.put("requestId", data.get("requestId"));
-        eventBus.post(new PluginMessage("loot-filters", "resolved-display-response-v1", Collections.unmodifiableMap(reply)));
+        if (!(data.get("x") instanceof Integer) || !(data.get("y") instanceof Integer)
+                || !(data.get("z") instanceof Integer) || !(data.get("itemId") instanceof Integer)
+                || (data.containsKey("worldViewId") && !(data.get("worldViewId") instanceof Integer))) return;
+        int worldViewId = (Integer) data.getOrDefault("worldViewId", WorldView.TOPLEVEL);
+        Tile tile = findTile(worldViewId, (Integer) data.get("x"), (Integer) data.get("y"), (Integer) data.get("z"));
+        Map<String, Object> reply = tile == null ? Map.of("status", "not-found") : resolve(tile, (Integer) data.get("itemId"));
+        data.remove("display");
+        data.putAll(reply);
+    }
+
+    private Tile findTile(int worldViewId, int x, int y, int z) {
+        var view = plugin.getClient().getWorldView(worldViewId);
+        if (view == null || view.getScene() == null) return null;
+        var tiles = view.getScene().getTiles();
+        long sceneX = (long) x - view.getBaseX(), sceneY = (long) y - view.getBaseY();
+        if (tiles == null || z < 0 || z >= tiles.length || tiles[z] == null
+                || sceneX < 0 || sceneX >= tiles[z].length || tiles[z][(int) sceneX] == null
+                || sceneY < 0 || sceneY >= tiles[z][(int) sceneX].length) return null;
+        return tiles[z][(int) sceneX][(int) sceneY];
     }
 
     Map<String, Object> resolve(Tile tile, int itemId) {
@@ -50,26 +62,13 @@ class ResolvedDisplayService {
             chosenDisplay = display;
         }
 
-        Map<String, Object> reply = new HashMap<>();
-        reply.put("status", "ok");
-        reply.put("display", chosen);
-        reply.put("menu", Map.of(
-                "sort", chosenDisplay.getMenuSort(),
-                "deprioritized", plugin.getConfig().deprioritizeHidden() && chosenDisplay.isHidden(),
-                "textColor", chosenDisplay.isHidden() && plugin.getConfig().recolorHidden()
-                        ? plugin.getConfig().hiddenColor() : chosenDisplay.getMenuTextColor()));
-        reply.put("itemIcon", chosenIcon != null && (chosenIcon.getType() == 1 || chosenIcon.getType() == 3)
-                && chosenIcon.getParam0() == itemId);
-        if (chosenDisplay.isHideOverlay()) {
-            reply.put("iconStatus", "hidden");
-        } else if (chosenIcon == null) {
-            reply.put("iconStatus", "none");
-        } else {
-            var image = plugin.getIconIndex().get(chosenIcon);
-            reply.put("iconStatus", image == null ? "not-ready" : "ready");
-            if (image != null) reply.put("icon", image);
+        if (chosenIcon != null) {
+            Map<String, Object> icon = new HashMap<>(icon(chosenIcon));
+            icon.put("image", chosenDisplay.isHideOverlay() ? null : plugin.getIconIndex().get(chosenIcon));
+            chosen = new HashMap<>(chosen);
+            chosen.put("icon", Collections.unmodifiableMap(icon));
         }
-        return Collections.unmodifiableMap(reply);
+        return Map.of("status", "ok", "display", Collections.unmodifiableMap(chosen));
     }
 
     private static Map<String, Object> snapshot(DisplayConfig display, BufferedImageProvider.CacheKey icon) {
