@@ -63,6 +63,31 @@ public class MenuIconServiceTest {
         when(items.findItem(tile,4151)).thenReturn(stacks);
         assertEquals("not-ready",service.resolve(tile,4151).get("status"));
     }
+    @Test public void suppressedIconsNeverReadImageCacheAndMixedStacksAreAmbiguous() {
+        var provider=new BufferedImageProvider.File("same.png");
+        var hidden=item(provider); var visible=item(provider);
+        when(displays.get(hidden).isHideOverlay()).thenReturn(true);
+        when(items.findItem(tile,4151)).thenReturn(List.of(hidden));
+        assertEquals("no-icon",service.resolve(tile,4151).get("status"));
+        when(items.findItem(tile,4151)).thenReturn(List.of(hidden,visible));
+        assertEquals("ambiguous",service.resolve(tile,4151).get("status"));
+        when(items.findItem(tile,4151)).thenReturn(List.of(visible,hidden));
+        assertEquals("ambiguous",service.resolve(tile,4151).get("status"));
+        verifyNoInteractions(icons);
+    }
+    @Test public void compactDisplayUsesItsCurrentItemIconAndConfiguredCacheSize() {
+        var item=item(null);
+        var display=DisplayConfig.builder().compact(true).build();
+        when(displays.get(item)).thenReturn(display);
+        LootFiltersConfig config=mock(LootFiltersConfig.class);
+        when(plugin.getConfig()).thenReturn(config); when(config.compactRenderSize()).thenReturn(24);
+        when(items.findItem(tile,4151)).thenReturn(List.of(item));
+        var image=new BufferedImage(24,24,2);
+        when(icons.get(display.getIcon().getCacheKey(item,24))).thenReturn(image);
+        var result=service.resolve(tile,4151);
+        assertEquals("ok",result.get("status")); assertSame(image,result.get("icon"));
+        assertEquals(true,result.get("itemIcon"));
+    }
     @Test public void repliesOnlyToValidClientThreadRequests() {
         service.onPluginMessage(new PluginMessage("loot-filters","menu-icon-request-v1"));
         verifyNoInteractions(bus);

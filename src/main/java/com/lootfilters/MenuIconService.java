@@ -41,7 +41,7 @@ class MenuIconService {
             var display = plugin.getDisplayIndex().get(item);
             // Only consume existing evaluated state; never read files or re-evaluate rules here.
             if (display == null) { reply.put("status", "not-ready"); return reply; }
-            var provider = display.getIcon();
+            var provider = display.isHideOverlay() ? null : display.getIcon();
             var key = provider == null ? null : provider.getCacheKey(item,
                     display.isCompact() ? plugin.getConfig().compactRenderSize() : 16);
             // A menu row cannot identify which same-ID stack it refers to.
