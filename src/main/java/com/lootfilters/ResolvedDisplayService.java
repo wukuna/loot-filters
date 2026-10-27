@@ -15,6 +15,11 @@ import net.runelite.client.events.PluginMessage;
 /** On-demand snapshots of evaluated state. Never evaluates rules, loads images or plays sounds. */
 class ResolvedDisplayService {
     @Inject private LootFiltersPlugin plugin;
+    @Inject private ResolvedImageProvider images;
+
+    void invalidate() {
+        images.invalidate();
+    }
 
     void onPluginMessage(PluginMessage message) {
         if (!"loot-filters".equals(message.getNamespace())
@@ -47,7 +52,6 @@ class ResolvedDisplayService {
         if (items == null || items.isEmpty()) return Map.of("status", "not-found");
         Map<String, Object> chosen = null;
         BufferedImageProvider.CacheKey chosenIcon = null;
-        DisplayConfig chosenDisplay = null;
         for (var item : items) {
             var display = plugin.getDisplayIndex().get(item);
             if (display == null) return Map.of("status", "not-ready");
@@ -59,12 +63,11 @@ class ResolvedDisplayService {
             if (chosen != null && !chosen.equals(snapshot)) return Map.of("status", "ambiguous");
             chosen = snapshot;
             chosenIcon = key;
-            chosenDisplay = display;
         }
 
         if (chosenIcon != null) {
             Map<String, Object> icon = new HashMap<>(icon(chosenIcon));
-            icon.put("image", chosenDisplay.isHideOverlay() ? null : plugin.getIconIndex().get(chosenIcon));
+            icon.put("getImage", images.provider(chosenIcon));
             chosen = new HashMap<>(chosen);
             chosen.put("icon", Collections.unmodifiableMap(icon));
         }
